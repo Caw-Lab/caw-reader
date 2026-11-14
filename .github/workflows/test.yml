@@ -32,6 +32,8 @@ jobs:
       - name: Test (including the 12 smltxt vectors; fail if anything is skipped)
         env:
           CAW_TABLE_FILE: ${{ runner.temp }}/tableData.ts
+          # Node 24 prints the spec format even when piped; force TAP so the summary lines below can be checked
+          NODE_OPTIONS: --test-reporter=tap
         shell: bash
         run: |
           npm test 2>&1 | tee "$RUNNER_TEMP/test.log"
