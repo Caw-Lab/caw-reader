@@ -1,0 +1,18 @@
+{
+  "name": "caw-reader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A read-only CAW node (prototype). Reads the chain, rebuilds posts and shows them locally",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "bin": { "caw-reader": "bin/caw-reader.mjs" },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "sync": "node bin/caw-reader.mjs sync",
+    "start": "node bin/caw-reader.mjs run"
+  },
+  "dependencies": {
+    "ethers": "6.17.0"
+  }
+}

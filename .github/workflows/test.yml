@@ -1,0 +1,39 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+# Only runs tests, so the repository is read-only
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['22', '24']
+    env:
+      # Upstream statistics table (pinned commit). src/smltxt.mjs checks its SHA-256 before use
+      TABLE_URL: https://raw.githubusercontent.com/GilgameshCaw/Caw/97cd13f3a1423f702d411472fdd2b2a2e7bfbd59/smltxt/src/tableData.ts
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      # actions/setup-node v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - name: Fetch the statistics table
+        run: curl -fsSL --retry 3 -o "$RUNNER_TEMP/tableData.ts" "$TABLE_URL"
+      - name: Test (including the 12 smltxt vectors; fail if anything is skipped)
+        env:
+          CAW_TABLE_FILE: ${{ runner.temp }}/tableData.ts
+        shell: bash
+        run: |
+          npm test 2>&1 | tee "$RUNNER_TEMP/test.log"
+          grep -q '^# fail 0$' "$RUNNER_TEMP/test.log"
+          grep -q '^# skipped 0$' "$RUNNER_TEMP/test.log"

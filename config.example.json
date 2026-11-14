@@ -1,0 +1,20 @@
+{
+  "rpcUrl": "https://sepolia.base.org",
+  "archiveRpcUrl": null,
+  "chainId": 84532,
+  "cawActions": "0x73246104f57001EDC6d0659Fa37Afb672a76E763",
+  "cawActionsErc1271": null,
+  "ledger": "0x93593A023629EB84B389770d76A81C5f982F02a9",
+  "l1RpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+  "l1ChainId": 11155111,
+  "cawProfile": "0x3BA577936Ff6Cfe07DC2D00e6669436C6Dace319",
+  "l1Confirmations": 12,
+  "startBlock": null,
+  "confirmations": 20,
+  "logWindow": 200,
+  "pollSeconds": 15,
+  "db": "caw-reader.sqlite",
+  "tableUrl": "https://raw.githubusercontent.com/GilgameshCaw/Caw/97cd13f3a1423f702d411472fdd2b2a2e7bfbd59/smltxt/src/tableData.ts",
+  "tableSha256": "3b1111b5c9e2dbc249f93f1bd46cc2ce8d663e44cefc585a9288632fff024e30",
+  "listen": { "host": "127.0.0.1", "port": 4380 }
+}
