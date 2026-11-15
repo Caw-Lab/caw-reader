@@ -39,6 +39,8 @@ node bin\caw-reader.mjs run
 
 This keeps reading and serves the UI and API at `http://127.0.0.1:4380/`. Stop with Ctrl+C. Progress is stored in the database, so the next run continues where it stopped.
 
+The UI can be shown in English or Japanese with the switch at the top right. The choice is kept in that browser only.
+
 Other commands:
 
 | Command | What it does |
@@ -88,13 +90,13 @@ Comparison with the database of node2 (tencawffee.com, a CAW full node) on 2026-
 - A block range counts as read only when all of it has been written to the database. If a transaction body or block cannot be fetched, reading does not move forward; the next run starts from the same place (the idea behind upstream PR #60).
 - Only blocks at least `confirmations` behind the head are read. If a log's block hash differs from the current block (a reorg in progress), that range is read again.
 - If the RPC rejects a range as too wide, the range is halved automatically. On rate limiting (429), it waits and reads again.
-- A batch with no matching bytes in its calldata is not dropped. It is kept as "unresolved", and the count is shown in the UI's status tab and in `/api/status`.
+- A batch with no matching bytes in its calldata is not dropped. It is kept as "unresolved", and the count is shown in the UI's side panel and in `/api/status`.
 
 ### Things it does not decide silently
 
 - On the safe path, if one batch contains two or more different actions with the same `(senderId, cawonce)` and one of them was rejected, the logs cannot tell which one, so it is marked "ambiguous".
 - If an already accepted `(senderId, cawonce)` appears as accepted again, the later one is recorded as "duplicate" (this should not happen on the contract).
-- The meaning of `receiverCawonce`, which tells which post a like or RECAW is for, cannot be determined from the contracts. Likes and RECAWs are linked to posts by the mapping checked against real data (spec memo section "receiverCawonce"), and the UI shows ♥ and 🔁 counts.
+- The meaning of `receiverCawonce`, which tells which post a like or RECAW is for, cannot be determined from the contracts. Likes and RECAWs are linked to posts by the mapping checked against real data (spec memo section "receiverCawonce"), and the UI shows like and RECAW counts under each post.
 
 ## API (GET only, served on 127.0.0.1 only)
 

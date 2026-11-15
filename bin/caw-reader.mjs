@@ -178,7 +178,7 @@ async function main() {
   if (cmd === 'status') {
     const { makeApi } = await import('../src/server.mjs');
     const st = makeApi(db, () => null)('/api/status', new URLSearchParams());
-    // status does not load the statistics table, so its state is not shown (see the Status tab of the UI while running)
+    // status does not load the statistics table, so its state is not shown (see the side panel of the UI while running)
     delete st.bodyTable;
     console.log(JSON.stringify(st, null, 2));
     return;
