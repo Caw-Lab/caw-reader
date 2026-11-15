@@ -63,6 +63,43 @@ export function makeApi(db, getDecoder) {
         (SELECT COUNT(*) FROM other_parsed) AS other_parsed,
         (SELECT COUNT(*) FROM actions WHERE type = 7 AND status = 'accepted') AS other_total`),
     anomalies: db.prepare('SELECT * FROM anomalies ORDER BY id DESC LIMIT ?'),
+    // One post and the batch it came in (for the receipt page)
+    post: db.prepare(`SELECT a.*, b.block_number, b.block_time, b.tx_hash, b.log_index, b.contract, b.kind, b.validator_id,
+        b.batch_hash, b.action_count, b.resolved,
+        COALESCE(s.name, s.l1_name) AS sender_name, COALESCE(r.name, r.l1_name) AS receiver_name
+      FROM actions a JOIN batches b ON b.id = a.batch_id
+      LEFT JOIN users s ON s.id = a.sender_id LEFT JOIN users r ON r.id = a.receiver_id
+      WHERE a.sender_id = ? AND a.cawonce = ? AND a.type = 0 AND a.status = 'accepted'`),
+    // LIKE / UNLIKE / RECAW pointing at a post (the receiverCawonce mapping of the spec memo)
+    related: db.prepare(`SELECT a.seq, a.type, a.sender_id, b.block_time, b.tx_hash, COALESCE(s.name, s.l1_name) AS sender_name
+      FROM actions a JOIN batches b ON b.id = a.batch_id LEFT JOIN users s ON s.id = a.sender_id
+      WHERE a.receiver_id = ? AND a.receiver_cawonce = ? AND a.status = 'accepted' AND a.type IN (1, 2, 3)
+      ORDER BY a.seq DESC LIMIT 100`),
+    // Interpreted OTHER actions pointing at a post
+    relatedOther: db.prepare(`SELECT o.seq, o.kind, o.sender_id, o.value, b.block_time, b.tx_hash, COALESCE(s.name, s.l1_name) AS sender_name
+      FROM other_parsed o JOIN actions a ON a.seq = o.seq JOIN batches b ON b.id = a.batch_id LEFT JOIN users s ON s.id = o.sender_id
+      WHERE o.kind IN ('tip', 'vote', 'hide_caw') AND o.target_sender = ? AND o.target_cawonce = ?
+      ORDER BY o.seq DESC LIMIT 100`),
+    postCount: db.prepare(`SELECT COUNT(*) AS n FROM actions WHERE sender_id = ? AND type = 0 AND status = 'accepted'`),
+    // Username prefix search (uses the users_name / users_l1_name indexes)
+    searchName: db.prepare(`SELECT id, name, l1_name FROM users WHERE (name >= ? AND name < ?) OR (l1_name >= ? AND l1_name < ?)
+      ORDER BY id LIMIT ?`),
+    daily: db.prepare(`SELECT date(b.block_time, 'unixepoch') AS day,
+        SUM(a.status = 'accepted' AND a.type = 0) AS posts,
+        SUM(a.status = 'accepted') AS accepted,
+        SUM(a.status <> 'accepted') AS not_accepted,
+        COUNT(DISTINCT CASE WHEN a.status = 'accepted' THEN a.sender_id END) AS active
+      FROM batches b JOIN actions a ON a.batch_id = b.id
+      WHERE b.block_time >= ? GROUP BY day ORDER BY day DESC`),
+    dailyTips: db.prepare(`SELECT date(b.block_time, 'unixepoch') AS day, o.value FROM batches b
+      JOIN actions a ON a.batch_id = b.id JOIN other_parsed o ON o.seq = a.seq
+      WHERE b.block_time >= ? AND o.kind IN ('tip', 'tip_profile')
+      UNION ALL
+      SELECT date(b.block_time, 'unixepoch') AS day, t.amount AS value FROM batches b
+      JOIN actions a ON a.batch_id = b.id JOIN caw_tips t ON t.seq = a.seq
+      WHERE b.block_time >= ?`),
+    byType: db.prepare(`SELECT a.type, a.status, COUNT(*) AS n FROM batches b JOIN actions a ON a.batch_id = b.id
+      WHERE b.block_time >= ? GROUP BY a.type, a.status`),
   };
 
   const stats = makeStats(db);
@@ -84,6 +121,28 @@ export function makeApi(db, getDecoder) {
     };
   };
 
+  // The statistics scan many rows, so one result per period is reused for a minute
+  const statsCache = new Map();
+  function dailyStats(days) {
+    const hit = statsCache.get(days);
+    if (hit && Date.now() - hit.at < 60_000) return hit.value;
+    const since = Math.floor(Date.now() / 1000) - days * 86400;
+    const tips = new Map();
+    for (const r of q.dailyTips.all(since, since)) {
+      const t = tips.get(r.day) ?? { count: 0, total: 0n };
+      t.count++; t.total += BigInt(r.value);
+      tips.set(r.day, t);
+    }
+    const value = {
+      days, timezone: 'UTC',
+      daily: q.daily.all(since).map((r) => ({ day: r.day, posts: r.posts, accepted: r.accepted, notAccepted: r.not_accepted,
+        active: r.active, tips: tips.get(r.day)?.count ?? 0, tipTotal: String(tips.get(r.day)?.total ?? 0n) })),
+      byType: q.byType.all(since).map((r) => ({ type: r.type, typeName: ACTION_TYPES[r.type] ?? ('UNKNOWN_' + r.type), status: r.status, count: r.n })),
+    };
+    statsCache.set(days, { at: Date.now(), value });
+    return value;
+  }
+
   return function route(path, params) {
     let m;
     if (path === '/api/status') {
@@ -92,8 +151,40 @@ export function makeApi(db, getDecoder) {
         logWindow: Number(getMeta(db, 'log_window')) || null,
         lastOk: Number(getMeta(db, 'last_ok')) || null, lastError: getMeta(db, 'last_error'),
         bodyTable: getDecoder() ? 'loaded' : 'unavailable',
+        chain: JSON.parse(getMeta(db, 'fingerprint') ?? 'null'),
         ...q.counts.get(),
       };
+    }
+    if (path === '/api/stats') {
+      const days = intParam(params.get('days'), 30, 1, 365);
+      if (days == null) return { error: 'bad_param', status: 400 };
+      return dailyStats(days);
+    }
+    if (path === '/api/users') {
+      // Prefix search by username (without @), or a token id such as 13 or #13
+      const raw = String(params.get('q') ?? '').trim().replace(/^@/, '').toLowerCase();
+      if (!raw || raw.length > 32) return { error: 'bad_param', status: 400 };
+      if (/^#?\d{1,10}$/.test(raw)) {
+        const id = Number(raw.replace('#', ''));
+        const u = q.user.get(id);
+        return { items: u ? [{ id, name: u.name ?? u.l1_name, l1Name: u.l1_name }] : [] };
+      }
+      const hi = raw + '\uffff';
+      return { items: q.searchName.all(raw, hi, raw, hi, 20).map((u) => ({ id: u.id, name: u.name ?? u.l1_name, l1Name: u.l1_name })) };
+    }
+    if ((m = path.match(/^\/api\/posts\/(\d{1,10})\/(\d{1,10})$/))) {
+      const sender = Number(m[1]); const cawonce = Number(m[2]);
+      const r = q.post.get(sender, cawonce);
+      if (!r) return { error: 'not_found', status: 404 };
+      const related = [
+        ...q.related.all(sender, cawonce).map((x) => ({ seq: x.seq, kind: ACTION_TYPES[x.type].toLowerCase(), senderId: x.sender_id, senderName: x.sender_name, time: x.block_time, tx: x.tx_hash, value: null })),
+        ...q.relatedOther.all(sender, cawonce).map((x) => ({ seq: x.seq, kind: x.kind, senderId: x.sender_id, senderName: x.sender_name, time: x.block_time, tx: x.tx_hash, value: x.value })),
+      ].sort((x, y) => y.seq - x.seq);
+      // The post is nested: its own "status" field must not be read as the HTTP status
+      return { post: toJson(r),
+        receipt: { logIndex: r.log_index, contract: r.contract, kind: r.kind, validatorId: r.validator_id, batchHash: r.batch_hash,
+          batchSize: r.action_count, indexInBatch: r.idx, resolved: !!r.resolved, bodyBytes: new Uint8Array(r.text).length },
+        related };
     }
     const limit = intParam(params.get('limit'), 50, 1, 100);
     const before = intParam(params.get('before'), MAX, 0, MAX);
@@ -106,7 +197,7 @@ export function makeApi(db, getDecoder) {
       const u = q.user.get(id);
       if (!u) return { error: 'not_found', status: 404 };
       return { id, name: u.name ?? u.l1_name, l2Name: u.name, l1Name: u.l1_name, owner: u.owner, mintedBlock: u.minted_block,
-        followers: q.followers.get(id).n, following: q.following.get(id).n, ...stats.profile(id) };
+        followers: q.followers.get(id).n, following: q.following.get(id).n, posts: q.postCount.get(id).n, ...stats.profile(id) };
     }
     if ((m = path.match(/^\/api\/users\/(\d{1,10})\/posts$/))) {
       return { items: q.userPosts.all(Number(m[1]), before, limit).map(toJson) };

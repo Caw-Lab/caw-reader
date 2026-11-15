@@ -99,6 +99,10 @@ CREATE INDEX IF NOT EXISTS caw_tips_post ON caw_tips (sender_id, cawonce);
 -- Look up by the target of LIKE, UNLIKE and RECAW (receiverId, receiverCawonce)
 CREATE INDEX IF NOT EXISTS actions_target ON actions (receiver_id, receiver_cawonce, type, sender_id, seq) WHERE status = 'accepted';
 
+-- For the daily statistics (by block time) and the username search (by prefix; the l1_name index is made in openDb)
+CREATE INDEX IF NOT EXISTS batches_time ON batches (block_time);
+CREATE INDEX IF NOT EXISTS users_name ON users (name);
+
 -- Record of unexpected events (so that nothing is dropped silently)
 CREATE TABLE IF NOT EXISTS anomalies (
   id INTEGER PRIMARY KEY,
@@ -116,6 +120,8 @@ export function openDb(path) {
   // DBs created by an earlier version have no l1_name column, so add it
   const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
   if (!cols.includes('l1_name')) db.exec('ALTER TABLE users ADD COLUMN l1_name TEXT');
+  // Created after the column exists (see above)
+  db.exec('CREATE INDEX IF NOT EXISTS users_l1_name ON users (l1_name)');
   return db;
 }
 

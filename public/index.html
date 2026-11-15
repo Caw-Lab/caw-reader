@@ -39,6 +39,12 @@ header .wrap{display:flex;align-items:center;gap:8px 24px;flex-wrap:wrap;min-hei
 main.wrap{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start;padding-top:24px;padding-bottom:48px}
 aside{flex:1 1 280px;display:flex;flex-direction:column;gap:16px;min-width:0}
 .feedbox{flex:999 1 560px;min-width:0;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+/* When the two columns stack (narrow screens, below 912px where 280 + 24 + 560 + padding no longer fit):
+   the status panel is shown only on the Status tab, above its list; other tabs use the full width */
+@media (max-width:911px){
+  aside{display:none}
+  body[data-route=review] aside{display:flex}
+}
 
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
 .state{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ok)}
@@ -97,17 +103,83 @@ dd{margin:0;text-align:right;font-family:var(--mono);overflow-wrap:anywhere}
 .foot{padding:14px 20px}
 .more{width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:600;cursor:pointer}
 .more:disabled{color:var(--sub);cursor:default}
+
+a{color:var(--link)}
+.tab{display:flex;align-items:center;text-decoration:none}
+a.tab[aria-current=page]{color:var(--ink);font-weight:600;border-bottom-color:var(--accent)}
+.search{display:flex;gap:8px;padding:18px 20px;border-bottom:1px solid var(--line2)}
+.search input{flex:1;min-width:0;min-height:40px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font:inherit;color:var(--ink)}
+.search input:focus-visible{outline:2px solid var(--link);outline-offset:1px}
+.search button{min-height:40px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);cursor:pointer}
+.feedhead a{font-size:13px}
+.post .name a,.post .handle a,.to a{color:inherit;text-decoration:none}
+.post .name a:hover,.to a:hover{text-decoration:underline}
+.time{color:var(--sub);text-decoration:none}
+a.time:hover{text-decoration:underline}
+.rbtn{min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--link);font-size:13px;font-weight:600;cursor:pointer}
+.rbtn:hover{background:var(--bg)}
+.rbtn:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.receipt{margin-top:4px;border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:14px;background:#fdfcf9}
+.receipt h3{margin:0;font-size:14px}
+.receipt .part{display:flex;flex-direction:column;gap:8px}
+.receipt .perma{font-size:13px}
+.receipt .mut{margin:0;font-size:13px;color:var(--sub)}
+}
+.sec{padding:18px 20px;border-bottom:1px solid var(--line2);display:flex;flex-direction:column;gap:10px}
+.sec h2{margin:0;font-size:15px}
+.sec p{margin:0;font-size:13px;color:var(--sub)}
+.rows{grid-template-columns:minmax(120px,auto) 1fr}
+.rows dd{text-align:left}
+.rows dd small{display:block;color:var(--sub);font-family:var(--sans)}
+details summary{cursor:pointer;font-size:13px;color:var(--link)}
+.steps{margin:0;padding-left:20px;font-size:13px;display:flex;flex-direction:column;gap:6px;overflow-wrap:anywhere}
+.steps code,.mono{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+.rel{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;font-size:14px;padding:8px 0;border-top:1px solid var(--line2)}
+.rel:first-child{border-top:0}
+.kind{font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line)}
+.prof{display:flex;gap:16px;align-items:center}
+.prof .av{flex-basis:64px;width:64px;height:64px;font-size:26px}
+.prof h2{margin:0;font-size:20px}
+.stats3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.stats3 div{background:var(--bg);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column}
+.stats3 span{font-size:12px;color:var(--sub)}
+.stats3 b{font-size:20px}
+.ulist a{display:flex;gap:12px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line2);color:var(--ink);text-decoration:none}
+.ulist a:hover{background:var(--bg)}
+.ulist .av{flex-basis:36px;width:36px;height:36px;font-size:15px}
+.period{display:flex;gap:6px;flex-wrap:wrap}
+.period button{min-height:36px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--sub);cursor:pointer}
+.period button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:#fff}
+.chart{display:flex;align-items:flex-end;gap:3px;height:140px;padding:8px 0;border-bottom:1px solid var(--line)}
+.chart div{flex:1 1 0;min-width:2px;background:var(--accent);border-radius:3px 3px 0 0}
+.chartaxis{display:flex;justify-content:space-between;font-size:12px;color:var(--sub)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line2);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--sub);font-weight:600}
+td{font-family:var(--mono);font-size:12px}
+/* Phone: tabs on one scrollable line under the brand and the language switch; receipt rows stack */
+@media (max-width:720px){
+  header .tabs{order:3;flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;margin:0 -12px;padding:0 12px}
+  header .tab{white-space:nowrap}
+  header .pill{display:none}   /* keeps the brand and the language switch on one line */
+  .rows{grid-template-columns:1fr;gap:0}
+  .rows dt{margin-top:8px}
+  .rows dt:first-child{margin-top:0}
 </style>
 </head>
 <body>
 <header>
   <div class="wrap">
     <div class="brand"><div class="mark" aria-hidden="true">C</div><b>CAW Reader</b><span class="pill" data-i18n="readonly">read-only</span></div>
-    <div class="tabs" role="tablist" aria-label="Views" data-i18n-aria="views">
-      <button class="tab" role="tab" data-view="posts" aria-selected="true" data-i18n="tabPosts">Posts</button>
-      <button class="tab" role="tab" data-view="actions" aria-selected="false" data-i18n="tabActions">All actions</button>
-      <button class="tab" role="tab" data-view="status" aria-selected="false" data-i18n="tabStatus">Status</button>
-    </div>
+    <nav class="tabs" aria-label="Views" data-i18n-aria="views">
+      <a class="tab" href="#/posts" data-route="posts" data-i18n="tabPosts">Posts</a>
+      <a class="tab" href="#/actions" data-route="actions" data-i18n="tabActions">All actions</a>
+      <a class="tab" href="#/stats" data-route="stats" data-i18n="tabStats">Stats</a>
+      <a class="tab" href="#/search" data-route="search" data-i18n="tabSearch">Search</a>
+      <a class="tab" href="#/review" data-route="review" data-i18n="tabStatus">Status</a>
+    </nav>
     <div class="lang" role="group" aria-label="Language">
       <button type="button" data-lang="en" aria-pressed="true">EN</button>
       <button type="button" data-lang="ja" aria-pressed="false" lang="ja">日本語</button>
@@ -141,7 +213,7 @@ dd{margin:0;text-align:right;font-family:var(--mono);overflow-wrap:anywhere}
     </p>
   </aside>
   <section class="feedbox" aria-labelledby="feedtitle">
-    <div class="feedhead"><b id="feedtitle">Latest posts</b><span data-i18n="newest">Newest first</span></div>
+    <div class="feedhead"><b id="feedtitle">Latest posts</b><span id="feedsub"></span></div>
     <div class="err" id="loaderr" hidden></div>
     <div id="feed"></div>
     <div class="foot" id="foot"><button class="more" id="more" data-i18n="more">Load older</button></div>

@@ -41,6 +41,8 @@ This keeps reading and serves the UI and API at `http://127.0.0.1:4380/`. Stop w
 
 The UI can be shown in English or Japanese with the switch at the top right. The choice is kept in that browser only.
 
+The UI has five tabs: Posts, All actions, Stats, Search (accounts by name or number) and Status (items for review). Each post has a "Receipt" button that unfolds, inside the post, where the post is on the chain and how to check it without any CAW node; the receipt also has its own link (`#/post/<senderId>/<cawonce>`). On wide screens the reading status is shown beside every tab; on narrow screens it is shown only on the Status tab. Owner addresses are returned by the API but are not shown in the UI.
+
 Other commands:
 
 | Command | What it does |
@@ -102,11 +104,14 @@ Comparison with the database of node2 (tencawffee.com, a CAW full node) on 2026-
 
 | Path | Contents |
 | --- | --- |
-| `/api/status` | Read position, counts, numbers of unresolved and review items, statistics table state |
+| `/api/status` | Read position, counts, numbers of unresolved and review items, statistics table state, and the chain and contracts the database was built from |
 | `/api/posts?limit=50&before=<seq>` | Accepted posts (newest first) |
+| `/api/posts/<senderId>/<cawonce>` | One post with its receipt: block, transaction, log index, signature path, validator, position in the batch, batch hash, body size, and the likes, RECAWs, tips and votes pointing at it |
 | `/api/actions?limit=50&before=<seq>` | All actions (with status) |
-| `/api/users/<tokenId>` | Name, owner, follow counts |
+| `/api/users?q=<text>` | Accounts whose name starts with the text (`@` optional), or the account with that number (`13` or `#13`); up to 20 |
+| `/api/users/<tokenId>` | Name, owner, follow counts, number of posts, profile fields |
 | `/api/users/<tokenId>/posts` | Posts by that name |
+| `/api/stats?days=30` | Per UTC day over the last 1 to 365 days: posts, accepted and not accepted actions, active accounts, tips; and counts by action type. The result is reused for one minute |
 | `/api/anomalies` | Items recorded for review |
 
 ## Not done yet
