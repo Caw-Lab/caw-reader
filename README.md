@@ -2,6 +2,10 @@
 
 caw-reader reads the chain from the oldest block forward, stores CAW posts, actions and usernames in a local database, and shows them in a browser. It never writes to the chain, never signs anything, and holds no keys.
 
+## Public instance
+
+https://caw-reader.com runs the `main` branch of this repository on Base Sepolia (chain id 84532) with the contract addresses in `config.example.json`. It has read the chain from the CawActions deployment block (45,547,482), so follow counts, profile fields and tips include every action since deployment. The server answers GET and HEAD only, and requests are rate-limited per IP address. The API listed below is reachable there as well, for example https://caw-reader.com/api/status.
+
 ## Sources and license
 
 - This repository is licensed under MIT (`LICENSE`).
