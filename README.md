@@ -45,7 +45,7 @@ This keeps reading and serves the UI and API at `http://127.0.0.1:4380/`. Stop w
 
 The UI can be shown in English or Japanese with the switch at the top right. The choice is kept in that browser only.
 
-The UI has five tabs: Posts, All actions, Stats, Search (accounts by name or number) and Status (items for review). Each post has a "Receipt" button that unfolds, inside the post, where the post is on the chain and how to check it without any CAW node; the receipt also has its own link (`#/post/<senderId>/<cawonce>`). On wide screens the reading status is shown beside every tab; on narrow screens it is shown only on the Status tab. Owner addresses are returned by the API but are not shown in the UI.
+The UI has seven tabs: Posts, All actions, Stats, Search (accounts by name or number), Authority (who holds admin-only powers), Signatures (reads a pasted signing request) and Status (items for review). Each post has a "Receipt" button that unfolds, inside the post, where the post is on the chain and how to check it without any CAW node; the receipt also has its own link (`#/post/<senderId>/<cawonce>`). On wide screens the reading status is shown beside every tab; on narrow screens it is shown only on the Status tab. Owner addresses are returned by the API but are not shown in the UI.
 
 Other commands:
 
@@ -117,6 +117,17 @@ Comparison with the database of node2 (tencawffee.com, a CAW full node) on 2026-
 | `/api/users/<tokenId>/posts` | Posts by that name |
 | `/api/stats?days=30` | Per UTC day over the last 1 to 365 days: posts, accepted and not accepted actions, active accounts, tips; and counts by action type. The result is reused for one minute |
 | `/api/anomalies` | Items recorded for review |
+| `/api/authority` | Who holds each admin-only power in the CAW contracts, read by the server from the L1 and L2 RPCs at one pinned block per chain (see below). One reading is shared for up to 10 minutes |
+
+## Authority and Signatures tabs (2026-11-18)
+
+Both are written from `solidity/contracts` in GilgameshCaw/Caw (MIT, master `97cd13f`) only. Each item in the UI shows the file and lines it comes from, and neither tab judges what it shows.
+
+**Authority** (`src/authority.mjs`, `/api/authority`). The server starts from `cawProfile` (L1) and `cawActions` (L2) in the config and finds every other contract by following values on the chain: `CawProfile.owner()` (PathwayExpander on L1), `CawProfile.networkManager()`, `CawActions.cawProfile()` (CawProfileLedger), `delegates(CawProfileLedger)` on its LayerZero endpoint (PathwayExpander on L2) and `CawActions.capOracle()`. For each power it shows the holder and whether that address has code (`eth_getCode`): a contract, a plain wallet, or the zero address. Network owners are read for at most 50 networks, and the result says when it was cut. Only `eth_blockNumber`, `eth_call` and `eth_getCode` are used, so the browser never calls an RPC, and the RPC sees at most one reading per 10 minutes however many people open the tab. Errors are reduced to a short code in the response, because RPC error messages can contain the RPC URL. CawActionsArchive and CawChallengeRelay are not read yet: no way to reach them from the two starting addresses has been found.
+
+**Signatures** (`public/sign.js`). Paste `eth_signTypedData_v4` JSON or `personal_sign` text. It recognises `ActionData`, `ActionBatch`, `SessionDelegation`, `TokenSessionDelegation`, `RevokeSession` and the "Enable Quick Sign" message, checks the domain name and version and that the type definition matches the contract's exactly, compares `verifyingContract` with the contracts this reader reads (`/api/status`), and says in plain words what signing would do. An `OTHER` action whose body is the 71-byte `qs:` form is shown as registering a Quick Sign key, with its key, expiry and cap (`CawActions.sol:1452-1483`). What is pasted is read only in the browser and is not sent anywhere, including this server. Bodies compressed with smltxt are not decompressed in this tab.
+
+The Quick Sign text rules were compared with the contract itself: `SessionMessageParser.sol` was compiled (solc 0.8.24) and run in an EVM on 24 messages, and the tab gave the same result for all 24. Those cases are kept in `test/sign.test.mjs`. Two things the comparison showed about the contract's parser: it does not check the first two characters of the key line (normally `0x`), and it does not check the text after the time on the expiry line (normally `UTC`).
 
 ## Not done yet
 
