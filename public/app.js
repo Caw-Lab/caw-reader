@@ -50,6 +50,33 @@ const I18N = {
     statsType: 'Type', statsStatus: 'Status', statsCount: 'Count',
     statsNote: 'Days are in UTC. Counts come from this node\'s DB, so days before the block it started reading from are missing. "Active accounts" are accounts with at least one accepted action that day.',
     statsEmpty: 'No actions in this period.',
+    tabAuthority: 'Authority', tabSign: 'Signatures', titleAuthority: 'Who holds admin powers', titleSign: 'Check a signing request',
+    auth: {
+      lead: 'Who currently holds each admin-only power in the CAW contracts, read from the chain by this caw-reader\'s server (L1 and L2 RPC, no CAW node). Starting from CawProfile (L1) and CawActions (L2), every other contract is found by following values on the chain.',
+      lead2: '"What it can do" is taken from GilgameshCaw/Caw solidity/contracts (MIT, master 97cd13f), with the file and lines. It makes no judgement of good or bad.',
+      readAt: (b1, b2, d) => 'Values as of L1 block ' + b1 + ' and L2 block ' + b2 + ' (read ' + d + '; one reading is shared for up to 10 minutes).',
+      stale: 'The chain could not be read just now; showing the last reading.', failed: 'The chain could not be read. Try again later.', notConfigured: 'This caw-reader has no L1 RPC or CawProfile address in its config, so this view is off.',
+      l1: 'L1 (Ethereum)', l2: 'L2 (Base)', address: 'Address', foundVia: 'Found via',
+      via: { seed: 'starting address in the config', 'cawProfile.owner': 'CawProfile.owner()', 'cawProfile.networkManager': 'CawProfile.networkManager()',
+        'cawActions.cawProfile': 'CawActions.cawProfile()', 'ledger.lzDelegate': 'delegates(CawProfileLedger) on the LayerZero endpoint', 'cawActions.capOracle': 'CawActions.capOracle()' },
+      names: { cawProfile: 'CawProfile (username NFTs)', pathwayExpanderL1: 'PathwayExpander (L1)', networkManager: 'CawNetworkManager (networks)',
+        cawActions: 'CawActions (posts and other actions)', cawProfileLedger: 'CawProfileLedger (L2 balances and sessions)', pathwayExpanderL2: 'PathwayExpander (L2)', capOracle: 'CawCapOracle (cost cap)' },
+      roles: { owner: 'owner', lzDelegate: 'LayerZero delegate', l2Writer: 'l2Writer' }, netOwner: (id) => 'Owner of network #' + id,
+      kinds: { eoa: 'Plain wallet (one key)', contract: 'Contract', none: 'None (zero address)', error: 'Could not read' },
+      sameAs: (n) => 'Same address as ' + n, minter: (a, same) => 'CawProfileMinter.pathwayExpander() is ' + a + (same ? ' (the same)' : ' (different)'),
+      networks: (n) => 'Registered networks: ' + n + ' (nextNetworkId − 1)', truncated: (n) => 'Only the first ' + n + ' networks are read.',
+      locks: (f, o) => 'Fees locked: ' + (f == null ? '?' : f ? 'yes' : 'no') + ' · ownership locked: ' + (o == null ? '?' : o ? 'yes' : 'no'),
+      can: {
+        'cawProfile.owner': ['Set a peer for a chain, once per chain; an existing peer cannot be changed (OnlyOnce). Ownership is handed to PathwayExpander in the constructor.', 'CawProfile.sol:224-241'],
+        'cawProfileLedger.owner': ['renounceOwnership() is called in the constructor (comment: "Zero admin from here on"). A zero address means it was renounced.', 'CawProfileLedger.sol:275, 294-295'],
+        lzDelegate: ['Can change this contract\'s settings on the LayerZero endpoint (DVNs, executor and similar). The source comment says this cannot forge messages themselves.', 'CawActionsArchive.sol:228-240'],
+        'pathwayExpander.owner': ['Add peers for new chains (addPeer / addPeers), add DVN settings for new pathways (configureNewPathway / addDvnToPathway), add KYC verifiers (addKycVerifier). The comment says existing settings cannot be rewritten; after renounceOwnership nothing more can be added.', 'PathwayExpander.sol:32-71, 138-264'],
+        network: ['Change fees and the fee address, add or remove sponsors, raise gas overrides (increase only), set the tip target, lower ceilings, change the owner. After lockNetworkFees / lockNetworkOwnership those parts can no longer be changed.', 'CawNetworkManager.sol:259-276, 418-683'],
+        'capOracle.l2Writer': ['Writes the values used to compute the cost cap.', 'CawCapOracle.sol:127, 160'],
+        cawActions: ['CawActions has no owner. Its references (CawProfileLedger, the ERC1271 sibling, CawCapOracle) are fixed at construction (immutable).', 'CawActions.sol:49, 167-179'],
+      },
+      notRead: 'CawActionsArchive and CawChallengeRelay are not read yet: no way to reach them from the two starting addresses has been found.',
+    },
   },
   ja: {
     docTitle: 'CAW 読み取り専用ノード', readonly: '読み取り専用', views: '表示', readingStatus: '読み込みの状況', counts: '件数',
@@ -94,6 +121,33 @@ const I18N = {
     statsType: '種類', statsStatus: '状態', statsCount: '件数',
     statsNote: '日付は UTC です。このノードの DB から数えているので、読み始めたブロックより前の日は含まれません。「動いたアカウント」は、その日に受理された行動が1件以上あるアカウントです。',
     statsEmpty: 'この期間の行動はありません。',
+    tabAuthority: '権限', tabSign: '署名の確認', titleAuthority: '管理者の権限を持っている人', titleSign: '署名の依頼を読み下す',
+    auth: {
+      lead: 'CAW のコントラクトで管理者だけができる操作の権限を、いま誰が持っているかを、この caw-reader のサーバーがチェーンから直接読んで並べます（L1 と L2 の RPC。CAW のノードは使いません）。起点は CawProfile（L1）と CawActions（L2）だけで、ほかのコントラクトはチェーン上の値をたどって見つけます。',
+      lead2: '「できること」は GilgameshCaw/Caw の solidity/contracts（MIT、master 97cd13f）に書かれている内容で、ファイルと行を添えています。良い・悪いの判断はしません。',
+      readAt: (b1, b2, d) => 'L1 ブロック ' + b1 + '、L2 ブロック ' + b2 + ' の時点の値です（' + d + ' に読みました。1回読んだ結果を最大10分、みんなで共有します）。',
+      stale: 'いまはチェーンを読めなかったので、前回読んだ結果を表示しています。', failed: 'チェーンを読めませんでした。時間をおいて試してください。', notConfigured: 'この caw-reader の設定に L1 の RPC か CawProfile のアドレスがないため、この表示は使えません。',
+      l1: 'L1（Ethereum）', l2: 'L2（Base）', address: 'アドレス', foundVia: '見つけ方',
+      via: { seed: '設定の起点のアドレス', 'cawProfile.owner': 'CawProfile.owner() の値', 'cawProfile.networkManager': 'CawProfile.networkManager() の値',
+        'cawActions.cawProfile': 'CawActions.cawProfile() の値', 'ledger.lzDelegate': 'LayerZero エンドポイントの delegates(CawProfileLedger) の値', 'cawActions.capOracle': 'CawActions.capOracle() の値' },
+      names: { cawProfile: 'CawProfile（名前の NFT）', pathwayExpanderL1: 'PathwayExpander（L1）', networkManager: 'CawNetworkManager（ネットワークの登録簿）',
+        cawActions: 'CawActions（投稿などの処理）', cawProfileLedger: 'CawProfileLedger（L2 の残高とセッション）', pathwayExpanderL2: 'PathwayExpander（L2）', capOracle: 'CawCapOracle（費用の上限）' },
+      roles: { owner: 'owner（持ち主）', lzDelegate: 'LayerZero の delegate', l2Writer: 'l2Writer（値を書き込む係）' }, netOwner: (id) => 'ネットワーク #' + id + ' の持ち主',
+      kinds: { eoa: 'ふつうのウォレット（鍵1本）', contract: 'コントラクト', none: 'なし（ゼロアドレス）', error: '読めませんでした' },
+      sameAs: (n) => n + ' と同じアドレス', minter: (a, same) => 'CawProfileMinter.pathwayExpander() の値は ' + a + (same ? '（同じ）' : '（違う）'),
+      networks: (n) => '登録されているネットワーク：' + n + ' 件（nextNetworkId − 1）', truncated: (n) => '最初の ' + n + ' 件だけを読んでいます。',
+      locks: (f, o) => '手数料のロック：' + (f == null ? '?' : f ? '済み' : 'まだ') + '・持ち主のロック：' + (o == null ? '?' : o ? '済み' : 'まだ'),
+      can: {
+        'cawProfile.owner': ['チェーンごとのつなぎ先（peer）の設定。1つのチェーンにつき1回だけで、既にあるものは書き換えられない（OnlyOnce）。持ち主は作られた時点で PathwayExpander に渡される。', 'CawProfile.sol:224-241'],
+        'cawProfileLedger.owner': ['作られた時点で renounceOwnership() が呼ばれる（コメント「Zero admin from here on」）。ゼロアドレスなら放棄済み。', 'CawProfileLedger.sol:275, 294-295'],
+        lzDelegate: ['LayerZero のエンドポイント側の、このコントラクトの設定（DVN や送り手の設定など）を変えられる役。メッセージそのものは偽造できない、とソースのコメントにある。', 'CawActionsArchive.sol:228-240'],
+        'pathwayExpander.owner': ['新しいチェーンのつなぎ先を足す（addPeer / addPeers）、新しい経路の DVN 設定を足す（configureNewPathway / addDvnToPathway）、KYC の検証役を足す（addKycVerifier）。既にある設定は書き換えられない、とコメントにある。renounceOwnership で放棄すると、以後は何も足せない。', 'PathwayExpander.sol:32-71, 138-264'],
+        network: ['手数料と受け取り先の変更、スポンサーの追加・削除、ガスの上乗せ（増やす方向のみ）、チップの目標値、上限の引き下げ、持ち主の変更。lockNetworkFees / lockNetworkOwnership をすると、その分は以後変えられない。', 'CawNetworkManager.sol:259-276, 418-683'],
+        'capOracle.l2Writer': ['費用の上限の計算に使う値を書き込む役。', 'CawCapOracle.sol:127, 160'],
+        cawActions: ['CawActions には owner がない。参照先（CawProfileLedger、ERC1271 の相方、CawCapOracle）は作られた時点で固定（immutable）。', 'CawActions.sol:49, 167-179'],
+      },
+      notRead: 'CawActionsArchive と CawChallengeRelay は、起点の2つからたどる方法がまだ見つかっていないため、まだ読んでいません。',
+    },
   },
 };
 const LOCALES = { en: 'en-US', ja: 'ja-JP' };
@@ -388,6 +442,63 @@ function renderStats(s) {
   return out;
 }
 
+// ---------- authority ----------
+
+function renderAuthority(d) {
+  const t = T(); const A = t.auth;
+  const head = el('section', 'sec');
+  head.append(el('p', null, A.lead), el('p', null, A.lead2));
+  if (!d || d.error) { head.append(el('div', 'err', d?.error === 'rpc_failed' ? A.failed : A.notConfigured)); return [head]; }
+  head.append(el('p', null, A.readAt(fmt(d.l1Block), fmt(d.l2Block), new Date(d.readAt).toLocaleString(LOCALES[lang]))));
+  if (d.stale) head.append(el('div', 'err', A.stale));
+  const out = [head];
+  const names = {};
+  for (const c of d.contracts) names[c.address.toLowerCase()] = A.names[c.key] ?? c.key;
+  const holderCell = (h, self) => {
+    const dd = el('dd', 'grp');
+    if (h.address) dd.append(el('div', 'mono', h.address));
+    dd.append(el('span', 'htag ' + h.kind, A.kinds[h.kind] + (h.code ? ' (' + h.code + ')' : '')));
+    const same = h.address && h.address.toLowerCase() !== self && names[h.address.toLowerCase()];
+    if (same) dd.append(el('small', null, A.sameAs(same)));
+    return dd;
+  };
+  const canRow = (dl, key) => {
+    const [text, src] = A.can[key];
+    dl.append(el('dt', null, '')); const dd = el('dd', 'note'); dd.append(el('span', 'can', text), el('small', 'mono', src)); dl.append(dd);
+  };
+  let last = null;
+  for (const c of d.contracts) {
+    if (c.chain !== last) { last = c.chain; const h = el('div', 'feedhead'); h.append(el('b', null, c.chain === 'l1' ? A.l1 : A.l2)); out.push(h); }
+    const sec = el('section', 'sec auth');
+    sec.append(el('h2', null, A.names[c.key] ?? c.key));
+    const dl = el('dl', 'rows');
+    dl.append(el('dt', null, A.address), el('dd', 'mono', c.address), el('dt', null, A.foundVia), el('dd', null, A.via[c.foundVia] ?? c.foundVia));
+    if (c.minterCheck) dl.append(el('dt', null, ''), el('dd', null, A.minter(c.minterCheck.address, c.minterCheck.same)));
+    const self = c.address.toLowerCase();
+    for (const r of c.roles) {
+      dl.append(el('dt', 'grp', A.roles[r.role] ?? r.role), holderCell(r.holder, self));
+      const key = r.role === 'lzDelegate' ? 'lzDelegate' : c.key.startsWith('pathwayExpander') ? 'pathwayExpander.owner' : c.key + '.' + r.role;
+      if (A.can[key]) canRow(dl, key);
+    }
+    if (c.key === 'cawActions') { dl.append(el('dt', 'grp', ''), el('dd', 'grp')); canRow(dl, 'cawActions'); }
+    if (c.key === 'networkManager') {
+      if (c.error) dl.append(el('dt', null, ''), el('dd', null, A.kinds.error + ' (' + c.error + ')'));
+      if (c.networkCount != null) dl.append(el('dt', null, ''), el('dd', null, A.networks(fmt(c.networkCount))));
+      for (const n of c.networks) {
+        dl.append(el('dt', 'grp', A.netOwner(n.id)), holderCell(n.holder, self));
+        dl.append(el('dt', null, ''), el('dd', null, A.locks(n.feesLocked, n.ownershipLocked)));
+      }
+      if (c.truncated) dl.append(el('dt', null, ''), el('dd', null, A.truncated(c.networks.length)));
+      if (c.networks.length) { dl.append(el('dt', 'grp', ''), el('dd', 'grp')); canRow(dl, 'network'); }
+    }
+    sec.append(dl);
+    out.push(sec);
+  }
+  const foot = el('section', 'sec'); foot.append(el('p', null, A.notRead));
+  out.push(foot);
+  return out;
+}
+
 // ---------- shell ----------
 
 function setCount(id, n, tileId) {
@@ -441,14 +552,14 @@ async function showStatus() {
   setCount('c-anomalies', s.anomalies, 't-anomalies');
 }
 
-// Reads the hash: #/posts, #/actions, #/stats, #/review, #/post/<sender>/<cawonce>, #/user/<id>, #/search/<text>
+// Reads the hash: #/posts, #/actions, #/stats, #/review, #/authority, #/sign, #/post/<sender>/<cawonce>, #/user/<id>, #/search/<text>
 function parseRoute() {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const name = parts[0] || 'posts';
   if (name === 'post' && /^\d{1,10}$/.test(parts[1] ?? '') && /^\d{1,10}$/.test(parts[2] ?? '')) return { name, sender: parts[1], cawonce: parts[2] };
   if (name === 'user' && /^\d{1,10}$/.test(parts[1] ?? '')) return { name, id: parts[1] };
   if (name === 'search') { let q = ''; try { q = decodeURIComponent(parts.slice(1).join('/')); } catch { /* broken escape */ } return { name, q: q.slice(0, 32) }; }
-  if (['posts', 'actions', 'stats', 'review'].includes(name)) return { name };
+  if (['posts', 'actions', 'stats', 'review', 'authority', 'sign'].includes(name)) return { name };
   return { name: 'posts' };
 }
 
@@ -501,6 +612,13 @@ async function render() {
       setHead(t.titleStats, null);
       const s = await api('/api/stats?days=' + statsDays);
       $('feed').append(...renderStats(s));
+    } else if (r.name === 'authority') {
+      setHead(t.titleAuthority, null);
+      const d = await api('/api/authority');
+      $('feed').append(...renderAuthority(d));
+    } else if (r.name === 'sign') {
+      setHead(t.titleSign, null);
+      window.CawSign.render($('feed'), lang, status?.chain ?? null);
     } else if (r.name === 'post') {
       setHead(t.titleReceipt, link('#/posts', null, t.back));
       const d = await api('/api/posts/' + r.sender + '/' + r.cawonce);

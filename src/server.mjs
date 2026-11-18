@@ -10,11 +10,13 @@ import { ACTION_TYPES } from './decode.mjs';
 import { getMeta } from './db.mjs';
 import { readBody } from './smltxt.mjs';
 import { makeStats } from './other.mjs';
+import { makeAuthority } from './authority.mjs';
 
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
 const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+  '/sign.js': ['sign.js', 'text/javascript; charset=utf-8'],
 };
 
 const HEADERS = {
@@ -32,7 +34,7 @@ function intParam(v, def, min, max) {
   return n < min || n > max ? null : n;
 }
 
-export function makeApi(db, getDecoder) {
+export function makeApi(db, getDecoder, getAuthority = null) {
   const q = {
     posts: db.prepare(`SELECT a.*, b.block_number, b.block_time, b.tx_hash, b.contract, b.kind,
         COALESCE(s.name, s.l1_name) AS sender_name, COALESCE(r.name, r.l1_name) AS receiver_name
@@ -155,6 +157,10 @@ export function makeApi(db, getDecoder) {
         ...q.counts.get(),
       };
     }
+    if (path === '/api/authority') {
+      // Read from the chain by the server (shared and cached), so the browser never calls an RPC
+      return getAuthority ? getAuthority() : { error: 'not_configured', status: 404 };
+    }
     if (path === '/api/stats') {
       const days = intParam(params.get('days'), 30, 1, 365);
       if (days == null) return { error: 'bad_param', status: 400 };
@@ -206,8 +212,8 @@ export function makeApi(db, getDecoder) {
   };
 }
 
-export function startServer(db, cfg, getDecoder) {
-  const route = makeApi(db, getDecoder);
+export function startServer(db, cfg, getDecoder, { authority = makeAuthority(cfg) } = {}) {
+  const route = makeApi(db, getDecoder, authority);
   const allowedHosts = new Set([cfg.listen.host + ':' + cfg.listen.port, 'localhost:' + cfg.listen.port, '127.0.0.1:' + cfg.listen.port]);
   const server = createServer(async (req, res) => {
     try {
@@ -221,7 +227,7 @@ export function startServer(db, cfg, getDecoder) {
         res.writeHead(200, { ...HEADERS, 'Content-Type': type });
         return res.end(req.method === 'HEAD' ? undefined : body);
       }
-      const out = route(url.pathname, url.searchParams);
+      const out = { ...(await route(url.pathname, url.searchParams)) };
       const status = out.status || 200;
       delete out.status;
       res.writeHead(status, { ...HEADERS, 'Content-Type': 'application/json; charset=utf-8' });
