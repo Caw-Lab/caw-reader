@@ -455,7 +455,7 @@ function renderAuthority(d) {
   const names = {};
   for (const c of d.contracts) names[c.address.toLowerCase()] = A.names[c.key] ?? c.key;
   const holderCell = (h, self) => {
-    const dd = el('dd');
+    const dd = el('dd', 'grp');
     if (h.address) dd.append(el('div', 'mono', h.address));
     dd.append(el('span', 'htag ' + h.kind, A.kinds[h.kind] + (h.code ? ' (' + h.code + ')' : '')));
     const same = h.address && h.address.toLowerCase() !== self && names[h.address.toLowerCase()];
@@ -464,32 +464,32 @@ function renderAuthority(d) {
   };
   const canRow = (dl, key) => {
     const [text, src] = A.can[key];
-    dl.append(el('dt', null, '')); const dd = el('dd'); dd.append(el('span', 'can', text), el('small', 'mono', src)); dl.append(dd);
+    dl.append(el('dt', null, '')); const dd = el('dd', 'note'); dd.append(el('span', 'can', text), el('small', 'mono', src)); dl.append(dd);
   };
   let last = null;
   for (const c of d.contracts) {
     if (c.chain !== last) { last = c.chain; const h = el('div', 'feedhead'); h.append(el('b', null, c.chain === 'l1' ? A.l1 : A.l2)); out.push(h); }
-    const sec = el('section', 'sec');
+    const sec = el('section', 'sec auth');
     sec.append(el('h2', null, A.names[c.key] ?? c.key));
     const dl = el('dl', 'rows');
     dl.append(el('dt', null, A.address), el('dd', 'mono', c.address), el('dt', null, A.foundVia), el('dd', null, A.via[c.foundVia] ?? c.foundVia));
     if (c.minterCheck) dl.append(el('dt', null, ''), el('dd', null, A.minter(c.minterCheck.address, c.minterCheck.same)));
     const self = c.address.toLowerCase();
     for (const r of c.roles) {
-      dl.append(el('dt', null, A.roles[r.role] ?? r.role), holderCell(r.holder, self));
+      dl.append(el('dt', 'grp', A.roles[r.role] ?? r.role), holderCell(r.holder, self));
       const key = r.role === 'lzDelegate' ? 'lzDelegate' : c.key.startsWith('pathwayExpander') ? 'pathwayExpander.owner' : c.key + '.' + r.role;
       if (A.can[key]) canRow(dl, key);
     }
-    if (c.key === 'cawActions') canRow(dl, 'cawActions');
+    if (c.key === 'cawActions') { dl.append(el('dt', 'grp', ''), el('dd', 'grp')); canRow(dl, 'cawActions'); }
     if (c.key === 'networkManager') {
       if (c.error) dl.append(el('dt', null, ''), el('dd', null, A.kinds.error + ' (' + c.error + ')'));
       if (c.networkCount != null) dl.append(el('dt', null, ''), el('dd', null, A.networks(fmt(c.networkCount))));
       for (const n of c.networks) {
-        dl.append(el('dt', null, A.netOwner(n.id)), holderCell(n.holder, self));
+        dl.append(el('dt', 'grp', A.netOwner(n.id)), holderCell(n.holder, self));
         dl.append(el('dt', null, ''), el('dd', null, A.locks(n.feesLocked, n.ownershipLocked)));
       }
       if (c.truncated) dl.append(el('dt', null, ''), el('dd', null, A.truncated(c.networks.length)));
-      if (c.networks.length) canRow(dl, 'network');
+      if (c.networks.length) { dl.append(el('dt', 'grp', ''), el('dd', 'grp')); canRow(dl, 'network'); }
     }
     sec.append(dl);
     out.push(sec);
