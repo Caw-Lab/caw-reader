@@ -5,6 +5,11 @@
   "cawActions": "0x73246104f57001EDC6d0659Fa37Afb672a76E763",
   "cawActionsErc1271": null,
   "ledger": "0x93593A023629EB84B389770d76A81C5f982F02a9",
+  "cawArchive": {
+    "rpcUrl": "https://arbitrum-sepolia-rpc.publicnode.com",
+    "chainId": 421614,
+    "address": "0x3B526a24a740F8FD5Ed9688E109414Ec10786B8D"
+  },
   "l1RpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
   "l1ChainId": 11155111,
   "cawProfile": "0x3BA577936Ff6Cfe07DC2D00e6669436C6Dace319",

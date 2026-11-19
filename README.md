@@ -55,6 +55,7 @@ Other commands:
 | `serve` | Serve the UI and API without reading |
 | `status` | Show the database state |
 | `diagnose` | Measure the RPC's `eth_getLogs` range limit, rate limit and access to old blocks, showing the raw responses |
+| `archive-check` | Check CawActionsArchive submissions against the chain and this reader's data (read-only; see below) |
 
 ## RPCs that prune old history (measured 2026-10-24)
 
@@ -128,6 +129,34 @@ Both are written from `solidity/contracts` in GilgameshCaw/Caw (MIT, master `97c
 **Signatures** (`public/sign.js`). Paste `eth_signTypedData_v4` JSON or `personal_sign` text. It recognises `ActionData`, `ActionBatch`, `SessionDelegation`, `TokenSessionDelegation`, `RevokeSession` and the "Enable Quick Sign" message, checks the domain name and version and that the type definition matches the contract's exactly, compares `verifyingContract` with the contracts this reader reads (`/api/status`), and says in plain words what signing would do. An `OTHER` action whose body is the 71-byte `qs:` form is shown as registering a Quick Sign key, with its key, expiry and cap (`CawActions.sol:1452-1483`). What is pasted is read only in the browser and is not sent anywhere, including this server. Bodies compressed with smltxt are not decompressed in this tab.
 
 The Quick Sign text rules were compared with the contract itself: `SessionMessageParser.sol` was compiled (solc 0.8.24) and run in an EVM on 24 messages, and the tab gave the same result for all 24. Those cases are kept in `test/sign.test.mjs`. Two things the comparison showed about the contract's parser: it does not check the first two characters of the key line (normally `0x`), and it does not check the text after the time on the expiry line (normally `UTC`).
+
+## archive-check: checking CawActionsArchive submissions
+
+```powershell
+node bin/caw-reader.mjs archive-check [--submission N] [--config config.json]
+```
+
+Read-only. For each submission of CawActionsArchive (all of them, or the one given) it takes the arguments of the `submitReplication` call and checks:
+
+1. `dataCommitment` = `keccak256(packedHash, rHash, entryHash)` equals the stored value.
+2. The shape: `(end - start + 1) x 32` actions, as many `r` values, no trailing bytes, and the root in the call equals the stored `merkleRoot`.
+3. The hash chain folded over the actions (as `slashIncoherentRoot` does) gives a Merkle root equal to the stored `merkleRoot`.
+4. Every checkpoint hash equals `networkHashAtCheckpoint(networkId, cp)` on the chain CawActions runs on (`rpcUrl`, `cawActions`), and `entryHash` equals the hash of the checkpoint before the first one (the zero hash for checkpoint 1).
+5. Each action in the submission equals the accepted action this reader stored for the same `(sender_id, cawonce)`. This needs the reader's database; without one the check is skipped. Actions the reader has not read yet are counted as "not read yet" and are not a failure. Rows the reader marked `ambiguous` are listed on their own, with the candidate the archive equals, and are not counted as differences.
+
+If nothing could be compared with the reader's database (no database, or nothing read yet), the line says "NOT CHECKED" and the summary says so: such a submission has passed only the checks against the chain. Rate limits and timeouts of the RPCs are retried (up to 4 tries); URLs in error messages are cut to their origin, so a key in an RPC URL is not printed.
+
+The status (PENDING / FINALIZED / SLASHED) is printed next to every submission: a PENDING submission passing the checks is correct, but it is not final until someone calls `finalizeSubmission`.
+
+Exit code: 0 all checks passed, 1 some check failed, 2 a submission could not be read.
+
+It needs `cawArchive` in the config (see `config.example.json`). **`cawArchive` is not `archiveRpcUrl`**: `archiveRpcUrl` is a full-history RPC of the main chain, used only when `rpcUrl` has pruned old state; `cawArchive` is the chain and address of CawActionsArchive.
+
+What it does not compare: the other direction. An action that this reader stored as accepted but that is missing from the archive is not looked for in the database; it shows up only as a checkpoint hash that differs from the source chain. Actions that came through `CawActionsERC1271` have not been compared against a synced database. The transaction of a submission must be a direct `submitReplication` call.
+
+What it cannot show: actions that were not applied (rejected, or skipped by a ZK batch) are not in the archive; the actions after the last submitted checkpoint are not in any submission yet; and times and Base transactions are not in the archive. The checkpoint hashes are read from the source chain, so the comparison with it can only be done while that chain answers.
+
+The transaction of a submission is found from its time (`finalizedAt` minus the challenge period) and a narrow `eth_getLogs` range around the estimated block, because public RPCs refuse wide ranges. A full run reads a few dozen blocks' logs and one `eth_call` per checkpoint.
 
 ## Not done yet
 
