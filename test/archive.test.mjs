@@ -4,7 +4,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AbiCoder, concat, getBytes, hexlify, keccak256, toBeHex, zeroPadValue } from 'ethers';
 import { openDb } from '../src/db.mjs';
-import { commitmentOf, foldChain, merkleRootOf, checkSubmission, compareWithDb, verifySubmission, sliceEnd, ZERO_HASH } from '../src/archive.mjs';
+import { commitmentOf, foldChain, merkleRootOf, checkSubmission, compareWithDb, verifySubmission, sliceEnd, redactUrls, isTransient, withRetry, ZERO_HASH } from '../src/archive.mjs';
+import { loadConfig } from '../src/config.mjs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { packActions, encodeAction } from './helpers.mjs';
 
 const h32 = (n) => zeroPadValue(toBeHex(n), 32);
@@ -199,4 +204,73 @@ test('Skipped and rejected rows are not accepted actions: the action counts as n
   const c = compareWithDb(db, s.call.packed);
   assert.equal(c.notInDb.length, 1);
   assert.equal(c.mismatched.length, 0);
+});
+
+test('An empty database is "not checked", not a pass', async () => {
+  const s = buildSubmission({ startCp: 3, cps: 1 });
+  const hashes = new Map([[2, s.call.entryHash], [3, s.cpHashes[0]]]);
+  const r = await verifySubmission(fakeSource(s, hashes), s.sub, dbWith([]));
+  const last = r.checks.at(-1);
+  assert.equal(last.ok, null);
+  assert.match(last.detail, /NOT CHECKED/);
+  assert.equal(r.ok, true); // the checks against the chain still passed
+});
+
+test('redactUrls keeps only the origin of every URL', () => {
+  const t = redactUrls('failed: https://arb.example.com/v2/SECRETKEY123?apikey=abc and http://x.test:8545/path, done');
+  assert.equal(t, 'failed: https://arb.example.com/**** and http://x.test:8545/****, done');
+  assert.ok(!t.includes('SECRET') && !t.includes('apikey'));
+});
+
+test('withRetry retries rate limits and timeouts, not other errors', async () => {
+  const waits = [];
+  const sleepFn = async (ms) => waits.push(ms);
+  let n = 0;
+  const v = await withRetry(async () => { if (++n < 3) throw new Error('HTTP 429 Too Many Requests'); return 'ok'; }, { sleepFn });
+  assert.equal(v, 'ok');
+  assert.deepEqual(waits, [1000, 2000]);
+
+  let m = 0;
+  await assert.rejects(withRetry(async () => { m++; throw new Error('execution reverted'); }, { sleepFn }), /reverted/);
+  assert.equal(m, 1);
+
+  let k = 0;
+  await assert.rejects(withRetry(async () => { k++; throw new Error('No response from RPC (x, 30 s)'); }, { tries: 3, sleepFn }), /No response/);
+  assert.equal(k, 3);
+  assert.equal(isTransient(new Error('rate limit exceeded')), true);
+  assert.equal(isTransient(new Error('bad data')), false);
+});
+
+// ---- the config key and the command ----
+const tmp = mkdtempSync(join(tmpdir(), 'caw-archive-'));
+const baseCfg = { cawActions: '0x73246104f57001EDC6d0659Fa37Afb672a76E763', ledger: '0x93593A023629EB84B389770d76A81C5f982F02a9' };
+const writeCfg = (name, extra) => { const f = join(tmp, name); writeFileSync(f, JSON.stringify({ ...baseCfg, ...extra })); return f; };
+
+test('Config: cawArchive is optional, defaults the chain id, and is validated', async () => {
+  assert.equal((await loadConfig(writeCfg('a.json', {}))).cawArchive, null);
+  const ok = await loadConfig(writeCfg('b.json', { cawArchive: { rpcUrl: 'https://rpc.example', address: '0x3B526a24a740F8FD5Ed9688E109414Ec10786B8D' } }));
+  assert.equal(ok.cawArchive.chainId, 421614);
+  assert.equal(ok.archiveRpcUrl, null);   // a different thing
+  await assert.rejects(loadConfig(writeCfg('c.json', { cawArchive: { rpcUrl: 'https://rpc.example' } })), /cawArchive.address/);
+  await assert.rejects(loadConfig(writeCfg('d.json', { cawArchive: { rpcUrl: 'https://rpc.example', address: 'nope' } })), /cawArchive.address/);
+  await assert.rejects(loadConfig(writeCfg('e.json', { cawArchive: { rpcUrl: 'ftp://rpc.example', address: '0x3B526a24a740F8FD5Ed9688E109414Ec10786B8D' } })), /cawArchive.rpcUrl/);
+  await assert.rejects(loadConfig(writeCfg('f.json', { cawArchive: { rpcUrl: '', address: '0x3B526a24a740F8FD5Ed9688E109414Ec10786B8D' } })), /cawArchive.rpcUrl/);
+});
+
+test('Command: archive-check without cawArchive, or with a bad --submission, stops with exit code 1 and no network', () => {
+  const run = (cfgFile, ...more) => spawnSync(process.execPath, ['--no-warnings', 'bin/caw-reader.mjs', 'archive-check', '--config', cfgFile, ...more], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname });
+  const noArchive = run(writeCfg('g.json', {}));
+  assert.equal(noArchive.status, 1);
+  assert.match(noArchive.stderr, /cawArchive/);
+  const bad = run(writeCfg('h.json', { cawArchive: { rpcUrl: 'http://127.0.0.1:9', address: '0x3B526a24a740F8FD5Ed9688E109414Ec10786B8D' } }), '--submission', 'x');
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /--submission/);
+});
+
+test('Command: an unreachable RPC is reported without the URL path and ends with exit code 1', () => {
+  const f = writeCfg('i.json', { cawArchive: { rpcUrl: 'http://127.0.0.1:9/SECRETKEY999', address: '0x3B526a24a740F8FD5Ed9688E109414Ec10786B8D' }, db: join(tmp, 'none.sqlite') });
+  const r = spawnSync(process.execPath, ['--no-warnings', 'bin/caw-reader.mjs', 'archive-check', '--config', f], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname, timeout: 120000 });
+  assert.equal(r.status, 1);
+  assert.ok(!(r.stdout + r.stderr).includes('SECRETKEY999'));
+  rmSync(tmp, { recursive: true, force: true });
 });

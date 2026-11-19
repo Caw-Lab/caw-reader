@@ -16,7 +16,7 @@ import { makeChain, describeError } from '../src/rpc.mjs';
 import { syncOnce, refreshNames, refreshL1Names, runLoop, EVENTS } from '../src/sync.mjs';
 import { startServer } from '../src/server.mjs';
 import { existsSync } from 'node:fs';
-import { makeArchiveSource, verifySubmission, STATUS_NAMES } from '../src/archive.mjs';
+import { makeArchiveSource, verifySubmission, redactUrls, STATUS_NAMES } from '../src/archive.mjs';
 import { loadTable, smlMakeDecoder } from '../src/smltxt.mjs';
 
 const args = process.argv.slice(2);
@@ -78,6 +78,10 @@ async function prepareDecoder(cfg) {
 
 // Exit code: 0 all checks passed, 1 some check failed, 2 a submission could not be read (and no check failed)
 async function archiveCheck(cfg) {
+  try { return await archiveCheckRun(cfg); } catch (e) { throw new Error(redactUrls(describeError(e))); }
+}
+
+async function archiveCheckRun(cfg) {
   const si = args.indexOf('--submission');
   const only = si >= 0 ? Number(args[si + 1]) : null;
   if (si >= 0 && !(Number.isInteger(only) && only > 0)) throw new Error('--submission needs a positive integer');
@@ -92,7 +96,7 @@ async function archiveCheck(cfg) {
   const next = await source.nextSubmissionId();
   const ids = only ? [only] : Array.from({ length: next - 1 }, (_, i) => i + 1);
   if (only && only >= next) throw new Error('Submission ' + only + ' does not exist (next id is ' + next + ')');
-  let failed = 0, unread = 0, pending = 0;
+  let failed = 0, unread = 0, pending = 0, uncompared = 0;
   for (const idNo of ids) {
     let sub;
     try {
@@ -108,13 +112,15 @@ async function archiveCheck(cfg) {
         for (const a of r.comparison.ambiguous.slice(0, 10)) console.log('    ambiguous: ' + a.key + ', ' + a.candidates + ' candidate row(s); the archive equals ' + (a.equal.length ? 'seq ' + a.equal.join(', ') : 'none of them'));
       }
       if (sub.status === 0) pending++;
+      if (r.checks.at(-1).ok === null) uncompared++;
       if (!r.ok) failed++;
     } catch (e) {
       unread++;
-      console.log('\nSubmission ' + idNo + ': could not be read: ' + describeError(e));
+      console.log('\nSubmission ' + idNo + ': could not be read: ' + redactUrls(describeError(e)));
     }
   }
   console.log('\n' + ids.length + ' submission(s): ' + (ids.length - failed - unread) + ' passed, ' + failed + ' failed, ' + unread + ' not read');
+  if (uncompared) console.log(uncompared + ' submission(s): the actions were NOT compared with this reader (no database, or nothing read yet), so they passed only the checks against the chain.');
   if (pending) console.log(pending + ' submission(s) are PENDING: not final, and they can still be challenged until they are finalized.');
   return failed ? 1 : unread ? 2 : 0;
 }

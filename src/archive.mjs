@@ -160,10 +160,33 @@ const SUBMISSION_CREATED = topicId('SubmissionCreated(uint256,address,uint32,uin
 const CALL_TIMEOUT_MS = 30000;
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
-function withTimeout(p, what) {
-  let t;
-  const timeout = new Promise((_, reject) => { t = setTimeout(() => reject(new Error('No response from RPC (' + what + ', ' + CALL_TIMEOUT_MS / 1000 + ' s)')), CALL_TIMEOUT_MS); });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+// Replaces every URL in a text by its origin: RPC URLs often carry an API key in the path or the query,
+// and error messages of the RPC library can contain the full URL
+export function redactUrls(text) {
+  return String(text).replace(/https?:\/\/[^\s"'<>),]+/g, (u) => { try { return new URL(u).origin + '/****'; } catch { return '(url)'; } });
+}
+
+// Errors worth another try: rate limits, timeouts and dropped connections. A reverted call or bad data is not retried.
+export function isTransient(e) {
+  const s = [e?.shortMessage, e?.message, e?.code, e?.info?.responseStatus, e?.info?.error?.code].filter((x) => x != null).join(' ');
+  return /\b429\b|rate.?limit|too many requests|No response from RPC|timeout|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|SERVER_ERROR|NETWORK_ERROR|\b50[234]\b/i.test(s);
+}
+
+export async function withRetry(fn, { tries = 4, baseMs = 1000, sleepFn = sleep } = {}) {
+  for (let i = 1; ; i++) {
+    try { return await fn(); } catch (e) {
+      if (i >= tries || !isTransient(e)) throw e;
+      await sleepFn(baseMs * 2 ** (i - 1));
+    }
+  }
+}
+
+function withTimeout(fn, what) {
+  return withRetry(() => {
+    let t;
+    const timeout = new Promise((_, reject) => { t = setTimeout(() => reject(new Error('No response from RPC (' + what + ', ' + CALL_TIMEOUT_MS / 1000 + ' s)')), CALL_TIMEOUT_MS); });
+    return Promise.race([fn(), timeout]).finally(() => clearTimeout(t));
+  });
 }
 
 // The source used by the command: the archive chain (cfg.cawArchive) and the chain CawActions runs on (cfg.rpcUrl).
@@ -179,14 +202,14 @@ export function makeArchiveSource(cfg, { delayMs = 250 } = {}) {
   let period = null;
 
   async function blockAtTime(ts) {
-    const head = await withTimeout(arch.getBlock('latest'), 'archive latest block');
+    const head = await withTimeout(() => arch.getBlock('latest'), 'archive latest block');
     const refNo = Math.max(1, head.number - 2000000);
-    const ref = await withTimeout(arch.getBlock(refNo), 'archive block');
+    const ref = await withTimeout(() => arch.getBlock(refNo), 'archive block');
     const rate = (head.number - ref.number) / Math.max(1, head.timestamp - ref.timestamp);
     let n = Math.max(1, Math.round(head.number - (head.timestamp - ts) * rate));
     for (let i = 0; i < 4; i++) {
       await sleep(delayMs);
-      const b = await withTimeout(arch.getBlock(n), 'archive block');
+      const b = await withTimeout(() => arch.getBlock(n), 'archive block');
       n = Math.max(1, n + Math.round((ts - b.timestamp) * rate));
     }
     return n;
@@ -194,9 +217,9 @@ export function makeArchiveSource(cfg, { delayMs = 250 } = {}) {
 
   return {
     describe: { archive: ca.address, archiveChainId: ca.chainId },
-    async nextSubmissionId() { return Number(await withTimeout(archive.nextSubmissionId(), 'nextSubmissionId')); },
+    async nextSubmissionId() { return Number(await withTimeout(() => archive.nextSubmissionId(), 'nextSubmissionId')); },
     async submission(idNo) {
-      const s = await withTimeout(archive.submissions(idNo), 'submissions');
+      const s = await withTimeout(() => archive.submissions(idNo), 'submissions');
       return {
         id: idNo, submitter: s.submitter, merkleRoot: s.merkleRoot, networkId: Number(s.networkId),
         startCheckpointId: Number(s.startCheckpointId), endCheckpointId: Number(s.endCheckpointId),
@@ -205,7 +228,7 @@ export function makeArchiveSource(cfg, { delayMs = 250 } = {}) {
     },
     // The arguments of the submitReplication call that created the submission
     async submitCall(sub) {
-      if (period === null) period = Number(await withTimeout(archive.CHALLENGE_PERIOD(), 'CHALLENGE_PERIOD'));
+      if (period === null) period = Number(await withTimeout(() => archive.CHALLENGE_PERIOD(), 'CHALLENGE_PERIOD'));
       const centre = await blockAtTime(sub.finalizedAt - period);
       const idTopic = zeroPadValue(toBeHex(sub.id), 32);
       let found = null;
@@ -213,12 +236,12 @@ export function makeArchiveSource(cfg, { delayMs = 250 } = {}) {
         for (const sgn of off === 0 ? [1] : [1, -1]) {
           await sleep(delayMs);
           const from = Math.max(1, centre + sgn * off - 2000);
-          const logs = await withTimeout(arch.getLogs({ address: ca.address, topics: [SUBMISSION_CREATED, idTopic], fromBlock: from, toBlock: from + 4000 }), 'archive eth_getLogs');
+          const logs = await withTimeout(() => arch.getLogs({ address: ca.address, topics: [SUBMISSION_CREATED, idTopic], fromBlock: from, toBlock: from + 4000 }), 'archive eth_getLogs');
           if (logs.length) { found = logs[0]; break; }
         }
       }
       if (!found) throw new Error('Could not find the transaction of submission ' + sub.id + ' near block ' + centre);
-      const t = await withTimeout(arch.getTransaction(found.transactionHash), 'archive transaction');
+      const t = await withTimeout(() => arch.getTransaction(found.transactionHash), 'archive transaction');
       if (!t) throw new Error('No transaction body for ' + found.transactionHash);
       let parsed;
       try { parsed = iface.parseTransaction({ data: t.data }); } catch { parsed = null; }
@@ -228,7 +251,7 @@ export function makeArchiveSource(cfg, { delayMs = 250 } = {}) {
     },
     async checkpointHash(networkId, cp) {
       await sleep(delayMs);
-      return withTimeout(actions.networkHashAtCheckpoint(networkId, cp), 'networkHashAtCheckpoint');
+      return withTimeout(() => actions.networkHashAtCheckpoint(networkId, cp), 'networkHashAtCheckpoint');
     },
   };
 }
@@ -265,7 +288,9 @@ export async function verifySubmission(source, sub, db) {
     if (cmp.notInDb.length) parts.push(cmp.notInDb.length + ' not read yet by this reader');
     if (cmp.ambiguous.length) parts.push(cmp.ambiguous.length + ' ambiguous (reported separately)');
     if (cmp.mismatched.length) parts.push(cmp.mismatched.length + ' DIFFER');
-    checks.push(check('actions vs this reader', cmp.mismatched.length === 0, parts.join(', ')));
+    // Nothing compared (an empty or not yet synced database) is "not checked", never a pass
+    const verdict = cmp.mismatched.length ? false : cmp.matched > 0 ? true : null;
+    checks.push(check('actions vs this reader', verdict, (verdict === null ? 'NOT CHECKED, no action compared: ' : '') + parts.join(', ')));
   } else {
     checks.push(check('actions vs this reader', null, db ? 'not checked: the shape check failed' : 'not checked: no database of this reader'));
   }
