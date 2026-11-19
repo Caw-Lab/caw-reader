@@ -7,6 +7,7 @@
 //   node bin/caw-reader.mjs run        [--config config.json]   keep reading and serve the UI and API
 //   node bin/caw-reader.mjs serve      [--config config.json]   serve the UI and API without reading
 //   node bin/caw-reader.mjs status     [--config config.json]   show the DB state
+//   node bin/caw-reader.mjs archive-check [--submission N] [--config config.json]   check CawActionsArchive submissions against the chain and this reader's data
 //   node bin/caw-reader.mjs diagnose   [--config config.json]   measure raw eth_getLogs responses of the RPC at several range widths
 
 import { loadConfig, fingerprint } from '../src/config.mjs';
@@ -14,6 +15,8 @@ import { openDb, checkFingerprint, getMeta } from '../src/db.mjs';
 import { makeChain, describeError } from '../src/rpc.mjs';
 import { syncOnce, refreshNames, refreshL1Names, runLoop, EVENTS } from '../src/sync.mjs';
 import { startServer } from '../src/server.mjs';
+import { existsSync } from 'node:fs';
+import { makeArchiveSource, verifySubmission, STATUS_NAMES } from '../src/archive.mjs';
 import { loadTable, smlMakeDecoder } from '../src/smltxt.mjs';
 
 const args = process.argv.slice(2);
@@ -22,7 +25,7 @@ const ci = args.indexOf('--config');
 const configPath = ci >= 0 ? args[ci + 1] : 'config.json';
 
 function usage() {
-  console.log('Usage: node bin/caw-reader.mjs <find-start|sync|run|serve|status|diagnose> [--config config.json]');
+  console.log('Usage: node bin/caw-reader.mjs <find-start|sync|run|serve|status|diagnose|archive-check> [--config config.json]');
   process.exit(2);
 }
 
@@ -71,6 +74,49 @@ async function prepareDecoder(cfg) {
     note = 'Cannot use the body statistics table (' + e.message + '). Bodies are stored and shown as bytes';
   }
   return { get: () => decoder, note };
+}
+
+// Exit code: 0 all checks passed, 1 some check failed, 2 a submission could not be read (and no check failed)
+async function archiveCheck(cfg) {
+  const si = args.indexOf('--submission');
+  const only = si >= 0 ? Number(args[si + 1]) : null;
+  if (si >= 0 && !(Number.isInteger(only) && only > 0)) throw new Error('--submission needs a positive integer');
+  const source = makeArchiveSource(cfg);
+  let db = null;
+  if (existsSync(cfg.db)) {
+    db = openDb(cfg.db);
+    checkFingerprint(db, fingerprint(cfg));
+  }
+  console.log('Archive: ' + cfg.cawArchive.address + ' (chain ' + cfg.cawArchive.chainId + '), source chain: ' + cfg.chainId);
+  console.log(db ? 'Comparing with this reader\'s database: ' + cfg.db : 'No database of this reader at ' + cfg.db + ': actions are not compared');
+  const next = await source.nextSubmissionId();
+  const ids = only ? [only] : Array.from({ length: next - 1 }, (_, i) => i + 1);
+  if (only && only >= next) throw new Error('Submission ' + only + ' does not exist (next id is ' + next + ')');
+  let failed = 0, unread = 0, pending = 0;
+  for (const idNo of ids) {
+    let sub;
+    try {
+      sub = await source.submission(idNo);
+      const r = await verifySubmission(source, sub, db);
+      const st = STATUS_NAMES[sub.status] ?? ('status ' + sub.status);
+      const when = new Date(sub.finalizedAt * 1000).toISOString();
+      console.log('\nSubmission ' + idNo + '  ' + st + '  network ' + sub.networkId + '  checkpoints ' + sub.startCheckpointId + '-' + sub.endCheckpointId
+        + (sub.status === 0 ? '  (can be finalized after ' + when + ')' : ''));
+      for (const c of r.checks) console.log('  ' + (c.ok === true ? 'ok     ' : c.ok === false ? 'FAILED ' : 'skipped') + ' ' + c.name.padEnd(24) + c.detail);
+      if (r.comparison) {
+        for (const m of r.comparison.mismatched.slice(0, 10)) console.log('    differs: ' + m.key + ' (' + m.fields.join(', ') + ')');
+        for (const a of r.comparison.ambiguous.slice(0, 10)) console.log('    ambiguous: ' + a.key + ', ' + a.candidates + ' candidate row(s); the archive equals ' + (a.equal.length ? 'seq ' + a.equal.join(', ') : 'none of them'));
+      }
+      if (sub.status === 0) pending++;
+      if (!r.ok) failed++;
+    } catch (e) {
+      unread++;
+      console.log('\nSubmission ' + idNo + ': could not be read: ' + describeError(e));
+    }
+  }
+  console.log('\n' + ids.length + ' submission(s): ' + (ids.length - failed - unread) + ' passed, ' + failed + ' failed, ' + unread + ' not read');
+  if (pending) console.log(pending + ' submission(s) are PENDING: not final, and they can still be challenged until they are finalized.');
+  return failed ? 1 : unread ? 2 : 0;
 }
 
 async function main() {
@@ -169,6 +215,11 @@ async function main() {
     }
     console.log('First block with the CawActions code: ' + lo);
     console.log('Set startBlock in config.json to ' + lo);
+    return;
+  }
+
+  if (cmd === 'archive-check') {
+    process.exitCode = await archiveCheck(cfg);
     return;
   }
 
